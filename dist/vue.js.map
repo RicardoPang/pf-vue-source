@@ -1,0 +1,1 @@
+{"version":3,"file":"vue.js","sources":["../src/index.js"],"sourcesContent":["// 整个自己编写的Vue入口\n\nexport default {\n  a: 1,\n  b: 2,\n};\n"],"names":["a","b"],"mappings":";;;;;;EAAA;;AAEA,cAAe;EACbA,EAAAA,CAAC,EAAE,CAAC;EACJC,EAAAA,CAAC,EAAE,CAAA;EACL,CAAC;;;;;;;;"}
