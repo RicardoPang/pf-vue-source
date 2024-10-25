@@ -7,11 +7,7 @@
     <title>VueInit</title>
   </head>
   <body>
-    <div id="app" a="1" disabled style="background: lightblue; color: #333">
-      <a href="#">hello</a>
-      <b>world</b>
-      <div>{{name}}</div>
-    </div>
+    <div id="app">{{name}}</div>
     <script src="/dist/vue.js"></script>
     <script>
       // Vue是MVVM框架(基于MVC升级, 弱化controller这一层, Vue没有完成遵循MVVM, 因为传统的MVVM框架, 不能手动的操作数据 ref可以操作组件数据)
@@ -32,17 +28,8 @@
             arr: ['北京', '上海', '深圳'],
           };
         },
-        // render(h) {
-        //   return h('div', { id: 'a' }, 'hello');
-        // },
-        // template: `<div id="a">hello</div>`,
       });
-
-      setTimeout(() => {
-        vm.name = '黑白灰';
-        vm._update(vm._render());
-      }, 2000);
-      console.log(vm);
+      vm._data.arr.push({ a: 1 });
     </script>
   </body>
 </html>
