@@ -26,7 +26,13 @@ export function lifeCycleMixin(Vue) {
     // 将虚拟节点变成真实节点
     // 将vnode渲染到el元素中
     const vm = this;
-    vm.$el = patch(vm.$el, vnode); // 可以初始化渲染，后续更新也走这个patch方法
+    const prevVnode = vm._vnode; // 上一次的vNode
+    if (!prevVnode) {
+      vm.$el = patch(vm.$el, vnode); // 可以初始化渲染，后续更新也走这个patch方法
+    } else {
+      vm.$el = patch(prevVnode, vnode);
+    }
+    vm._vnode = vnode; // 渲染完毕后重新更新vnode
   };
 }
 

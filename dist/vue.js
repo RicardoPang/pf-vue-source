@@ -350,7 +350,6 @@
     }, {
       key: "update",
       value: function update() {
-        console.log('update');
         queueWatcher(this); // 把当前的watcher 暂存起来
         // this.get(); // 重新渲染
       }
@@ -428,7 +427,6 @@
   function nextTick(cb) {
     // 先内部还是先用户的？
     callbacks.push(cb); // 维护nextTick中的cakllback方法
-    console.log(callbacks);
     if (!waiting) {
       timerFunc();
       // Promise.resolve().then(flushCallbacks);
@@ -461,6 +459,183 @@
     };
   }
 
+  function isSameVnode(n1, n2) {
+    return n1.tag === n2.tag && n1.key === n2.key;
+  }
+  function createElm(vnode) {
+    var tag = vnode.tag,
+      data = vnode.data,
+      children = vnode.children,
+      text = vnode.text;
+    if (typeof tag === 'string') {
+      // 元素
+      vnode.el = document.createElement(tag);
+      patchProps(vnode.el, {}, data);
+      children.forEach(function (child) {
+        vnode.el.appendChild(createElm(child)); // 递归渲染
+      });
+    } else {
+      // 文本
+      vnode.el = document.createTextNode(text);
+    }
+    return vnode.el;
+  }
+  function patchProps(el) {
+    var oldProps = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+    var props = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
+    // 老的属性中有 新的没有 要删除老的
+    var oldStyles = oldProps.style || {};
+    var newStyles = props.style || {};
+    for (var key in oldStyles) {
+      // 老的样式有 新的没有则删除
+      if (!newStyles[key]) {
+        el.style[key] = '';
+      }
+    }
+    for (var _key in oldProps) {
+      // 老的属性有 新的没有删除属性
+      if (!props[_key]) {
+        el.removeAttribute(_key);
+      }
+    }
+    for (var _key2 in props) {
+      // 用新的覆盖老的
+      if (_key2 === 'style') {
+        for (var styleName in props.style) {
+          el.style[styleName] = props.style[styleName];
+        }
+      } else {
+        el.setAttribute(_key2, props[_key2]);
+      }
+    }
+  }
+  function mountChildren(el, newChildren) {
+    for (var i = 0; i < newChildren.length; i++) {
+      var child = newChildren[i];
+      el.appendChild(createElm(child));
+    }
+  }
+  function patchVnode(oldVnode, vnode) {
+    // case1: 前后两个虚拟节点不是相同节点 直接替换掉即可
+    if (!isSameVnode(oldVnode, vnode)) {
+      return oldVnode.el.parentNode.replaceChild(createElm(vnode), oldVnode.el);
+    }
+    // 标签一样就复用节点
+    var el = vnode.el = oldVnode.el;
+    // case2: 两个元素虚拟节点都是文本的情况下 用新文本替换到老文本
+    if (!oldVnode.tag) {
+      if (oldVnode.text !== vnode.text) {
+        return el.textContent = vnode.text;
+      }
+    }
+    // case3: 两个都是标签 比对标签属性
+    patchProps(el, oldVnode.data, vnode.data);
+    // case4: 比较儿子节点 一方有儿子 一方没儿子 两方都有儿子
+    var oldChildren = oldVnode.children || [];
+    var newChildren = vnode.children || [];
+    if (oldChildren.length > 0 && newChildren.length > 0) {
+      // 完整diff算法 比对两个儿子 一层层比较, 不涉及夸级比较
+      updateChildren(el, oldChildren, newChildren);
+    } else if (newChildren.length > 0) {
+      // 没有老的 有新的
+      mountChildren(el, newChildren);
+    } else if (oldChildren.length > 0) {
+      // 新的没有 老的有 直接删除
+      el.innerHTML = ''; // 可以循环删除
+    }
+    return el;
+  }
+
+  // Vue2.0中采用双指针的方式比较两个节点
+  // 操作列表经常会有push shift pop unshift reverse sort这些方法(针对镇邪情况做一些优化)
+  function updateChildren(el, oldChildren, newChildren) {
+    // Vue中创建了4个指针 分别指向老孩子和新孩子的头尾
+    // 分别一次进行比较有一方先比较完毕就结束
+    var oldStartIndex = 0;
+    var newStartIndex = 0;
+    var oldEndIndex = oldChildren.length - 1;
+    var newEndIndex = newChildren.length - 1;
+    var oldStartVnode = oldChildren[0];
+    var newStartVnode = newChildren[0];
+    var oldEndVnode = oldChildren[oldEndIndex];
+    var newEndVnode = newChildren[newEndIndex];
+    function makeIndexByKey(children) {
+      var map = {};
+      children.forEach(function (child, index) {
+        map[child.key] = index;
+      });
+      return map;
+    }
+    var map = makeIndexByKey(oldChildren);
+
+    // 有任何一个不满足则停止 || 有一个为true就继续走
+    // 双方有一方的头指针 大于尾部指针则停止循环
+    while (oldStartIndex <= oldEndIndex && newStartIndex <= newEndIndex) {
+      if (!oldStartVnode) {
+        oldStartVnode = oldChildren[++oldStartIndex];
+      } else if (!oldEndVnode) {
+        oldEndVnode = oldChildren[--oldEndIndex];
+      } else if (isSameVnode(oldStartVnode, newStartVnode)) {
+        // 说明两个是同一个元素 要比较属性和它的儿子
+        patchVnode(oldStartVnode, newStartVnode);
+        oldStartVnode = oldChildren[++oldStartIndex];
+        newStartVnode = newChildren[++newStartIndex];
+        // 比较开头节点
+      } else if (isSameVnode(oldEndVnode, newEndVnode)) {
+        // 说明两个是同一个元素 要比较属性和它的儿子
+        patchVnode(oldEndVnode, newEndVnode);
+        oldEndVnode = oldChildren[--oldEndIndex];
+        newEndVnode = newChildren[--newEndIndex];
+        // 比较结尾节点
+      } else if (isSameVnode(oldEndVnode, newStartVnode)) {
+        patchVnode(oldEndVnode, newStartVnode);
+        // insertBefore具备移动性 会将原来的元素移动走
+        el.insertBefore(oldEndVnode.el, oldStartVnode.el); // 将老的尾巴移动到老的前面去
+        oldEndVnode = oldChildren[--oldEndIndex];
+        newStartVnode = newChildren[++newStartIndex];
+        // 比较尾头节点
+      } else if (isSameVnode(oldStartVnode, newEndVnode)) {
+        patchVnode(oldStartVnode, newEndVnode);
+        // insertBefore具备移动性 会将原来的元素移动走
+        el.insertBefore(oldStartVnode.el, oldEndVnode.el.nextSibling); // 将老的尾巴移动到老的后面去
+        oldStartVnode = oldChildren[++oldStartIndex];
+        newEndVnode = newChildren[--newEndIndex];
+        // 比较头尾节点
+      } else {
+        // 根据老的列表做一个映射关系 用新的去找 找到则移动 找不到则添加 最后多余的删除
+        // 给动态列表添加key的时候 要尽量避免使用索引 因为索引前后都是从0开始 可能会发生错误复用
+        var moveIndex = map[newStartVnode.key]; // 如果拿到则说明是要移动的索引
+        if (moveIndex !== undefined) {
+          var moveVnode = oldChildren[moveIndex]; // 找到对应的虚拟节点 复用
+          el.insertBefore(moveVnode.el, oldStartVnode.el);
+          oldChildren[moveIndex] = undefined; // 表示这个节点已经移动走了
+          patchVnode(moveVnode, newStartVnode); // 比对属性和子节点
+        } else {
+          el.insertBefore(createElm(newStartVnode), oldStartVnode.el);
+        }
+        newStartVnode = newChildren[++newStartIndex];
+        // 乱序比对
+      }
+    }
+    if (newStartIndex <= newEndIndex) {
+      // 新的多了 多余的就插入进去
+      for (var i = newStartIndex; i <= newEndIndex; i++) {
+        var childEl = createElm(newChildren[i]);
+        // 这里可能向后追加 还可能是向前追加
+        var anchor = newChildren[newEndIndex + 1] ? newChildren[newEndIndex + 1].el : null; // 获取下一个元素
+        el.insertBefore(childEl, anchor); // anchor为null的时候则会认为是appendChild
+      }
+    }
+    if (oldStartIndex <= oldEndIndex) {
+      // 老的多了 需要删除老的
+      for (var _i = oldStartIndex; _i <= oldEndIndex; _i++) {
+        if (oldChildren[_i]) {
+          var _childEl = oldChildren[_i].el;
+          el.removeChild(_childEl);
+        }
+      }
+    }
+  }
   function patch(oldVnode, vnode) {
     // oldVnode可能是后续做虚拟节点的时候，是两个虚拟节点的比较
     var isRealElement = oldVnode.nodeType; // 如果有说明是一个dom元素
@@ -476,27 +651,17 @@
       // 删除老的el节点
       parentNode.removeChild(oldElm);
       return el;
-    }
-  }
-  function createElm(vnode) {
-    var tag = vnode.tag;
-      vnode.data;
-      var children = vnode.children,
-      text = vnode.text;
-    if (typeof tag === 'string') {
-      // 元素
-      vnode.el = document.createElement(tag);
-      children.forEach(function (child) {
-        vnode.el.appendChild(createElm(child)); // 递归渲染
-      });
     } else {
-      // 文本
-      vnode.el = document.createTextNode(text);
+      // 1.两个节点不是同一个节点 直接删除老的换上新的(没有比对)
+      // 2.两个节点是同一个节点(判断节点的tag和节点的key) 比较两个节点的属性是否有差异(复用老节点 将差异的属性更新)
+      // 3.节点比较完毕后就需要比较两个的儿子了
+      patchVnode(oldVnode, vnode);
+      return vnode.el;
     }
-    return vnode.el;
   }
 
-  // 每次更新页面的话，dom结构不会变，调用render方法时，数据变化了会根据数据渲染成新的虚拟节点，用新的虚拟节点渲染dom
+  // 1.每次更新页面的话，dom结构不会变，调用render方法时，数据变化了会根据数据渲染成新的虚拟节点，用新的虚拟节点渲染dom
+  // 2.Vue3采用了最长递增子序列 找到最长不需要移动的序列 从而减少了移动操作
 
   // 创建对应的虚拟节点，进行渲染
   function lifeCycleMixin(Vue) {
@@ -522,7 +687,13 @@
       // 将虚拟节点变成真实节点
       // 将vnode渲染到el元素中
       var vm = this;
-      vm.$el = patch(vm.$el, vnode); // 可以初始化渲染，后续更新也走这个patch方法
+      var prevVnode = vm._vnode; // 上一次的vNode
+      if (!prevVnode) {
+        vm.$el = patch(vm.$el, vnode); // 可以初始化渲染，后续更新也走这个patch方法
+      } else {
+        vm.$el = patch(prevVnode, vnode);
+      }
+      vm._vnode = vnode; // 渲染完毕后重新更新vnode
     };
   }
 
@@ -751,7 +922,6 @@
         options.render = render;
       }
       // 将当前组件实例挂载到真实的el节点上面
-      console.log(options.render.toString());
       return mountComponent(vm, el);
     };
   }
@@ -769,6 +939,50 @@
   initMixin(Vue); // 后续再扩展都可以采用这种方式
   lifeCycleMixin(Vue);
   Vue.prototype.$nextTick = nextTick;
+
+  // ------------- 为了方便观察前后的虚拟节点-- 测试的-----------------
+  var vm0 = new Vue({
+    data: {
+      name: 'pf',
+      age: 22
+    }
+  });
+  var render0 = compileToFunctions("<div class=\"a\" style=\"color: lightblue;\" b=\"1\"><span>{{name}}</span><span>{{age}}</span></div>");
+  var oldVnode = render0.call(vm0);
+  var ele = createElm(oldVnode);
+  document.body.appendChild(ele);
+  var vm = new Vue({
+    data: {
+      message: 'hello world'
+    }
+  });
+  var render = compileToFunctions("<div class=\"b\" style=\"color: red\" c=33><span>{{message}}</span></div>");
+  render.call(vm);
+  var render1 = compileToFunctions("<ul  a=\"1\" style=\"color:blue\">\n    <li key=\"A\">a</li>\n    <li key=\"B\">b</li>\n    <li key=\"C\">c</li>\n    <li key=\"D\">d</li>\n</ul>");
+  var vm1 = new Vue({
+    data: {
+      name: 'pf'
+    }
+  });
+  var prevVnode = render1.call(vm1);
+  var el = createElm(prevVnode);
+  document.body.appendChild(el);
+  var render2 = compileToFunctions("<ul  a=\"1\"  style=\"color:red;\">\n    <li key=\"C\">c</li>\n    <li key=\"A\">a</li>\n    <li key=\"D\">d</li>\n    <li key=\"E\">e</li>\n    <li key=\"Q\">q</li>\n</ul>");
+  var vm2 = new Vue({
+    data: {
+      name: 'zf'
+    }
+  });
+  var nextVnode = render2.call(vm2);
+
+  // 直接将新的节点替换掉了老的，不是直接替换 而是比较两个人的区别之后在替换 diff算法
+  // diff算法是一个平级比较的过程 父亲和父亲比对，儿子和儿子比对
+  // 主要比对标签名和key来判断是不是同一个元素, 如果标签和key都一样说明两个元素使同一个元素
+  setTimeout(function () {
+    // patch(oldVnode, newVnode);
+
+    patch(prevVnode, nextVnode);
+  }, 2000);
 
   return Vue;
 

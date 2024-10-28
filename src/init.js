@@ -33,7 +33,6 @@ export function initMixin(Vue) {
       options.render = render;
     }
     // 将当前组件实例挂载到真实的el节点上面
-    console.log(options.render.toString());
     return mountComponent(vm, el);
   };
 }

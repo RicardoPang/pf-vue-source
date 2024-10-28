@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VueUpdate</title>
+  </head>
+  <body>
+    <div id="app" a="1" disabled style="background: lightblue; color: #333">
+      <div>{{name}}</div>
+      <span>{{name}}</span>
+      <i>{{age}}</i>
+      <i>{{arr}}</i>
+    </div>
+    <script src="/dist/vue.js"></script>
+    <script>
+      // Vue是MVVM框架(基于MVC升级, 弱化controller这一层, Vue没有完成遵循MVVM, 因为传统的MVVM框架, 不能手动的操作数据 ref可以操作组件数据)
+      // Vue的核心, 响应式数据原理
+      // React是一个V框架, 只是将数据转换成视图, 并没有绑定的操作, 更新数据也是手动调用setState(实现组件化)
+
+      // 响应式数据原理, Vue2中采用的是defineProperty(目的是监控数据的变化,数据变化了更新视图, 只要用户给数据赋值了, 触发视图更新)
+      const vm = new Vue({
+        el: '#app',
+        data() {
+          return {
+            name: 'ricardo',
+            age: 22,
+            adress: '华南-广州',
+            arr: [[1, 2, 3]],
+          };
+        },
+      });
+
+      setTimeout(() => {
+        // vm.address = '华南-深圳';
+        vm.name = '黑白灰';
+        vm.name = 'pf';
+        vm.name = '还有谁';
+        vm.age = 33;
+        // vm.arr[0].push('123');
+        // vm._update(vm._render()); // 直接默认强制更新，有可能数据没有变化但是我强制的让页面发生一次渲染
+
+        vm.$nextTick(() => {
+          console.log(document.querySelector('div').innerHTML);
+        });
+      }, 1000);
+
+      // 渲染watcher默认情况下创造一个组件，就会生成一个渲染watcher
+    </script>
+  </body>
+</html>

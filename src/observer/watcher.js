@@ -31,7 +31,6 @@ class Watcher {
     Dep.target = null; // 渲染完毕后就清空
   }
   update() {
-    console.log('update');
     queueWatcher(this); // 把当前的watcher 暂存起来
     // this.get(); // 重新渲染
   }
@@ -104,7 +103,6 @@ if (Promise) {
 export function nextTick(cb) {
   // 先内部还是先用户的？
   callbacks.push(cb); // 维护nextTick中的cakllback方法
-  console.log(callbacks);
   if (!waiting) {
     timerFunc();
     // Promise.resolve().then(flushCallbacks);
