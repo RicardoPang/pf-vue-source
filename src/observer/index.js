@@ -1,18 +1,24 @@
 import arrayPrototype from './array';
+import Dep from './dep';
+
+// 1.给每个对象和数组也增加dep属性
+// 2.当页面取值的时候会执行get方法, 拿到刚才新增的dep属性, 让它记住这个watcher
+// 3.稍后数据变化, 触发当前数组的dep中存放的watcher去更新
 
 class Observer {
   constructor(data) {
+    this.dep = new Dep(); // 给所有的对象都增加一个dep,后续会给对象增添新的属性也希望能实现更新
     // 如果有__ob__属性, 说明被观测过了
     Object.defineProperty(data, '__ob__', {
       value: this,
-      enumerable: false, // 不可枚举
+      enumerable: false, // 不可枚举(循环的时候无法获取到)
       writable: true,
       configurable: true,
     });
     if (Array.isArray(data)) {
-      // 如果是数组的话也是用defineProperty回浪费很多性能, 并且很少用户会通过索引操作 arr[666] = 777
+      // 如果是数组的话也是用defineProperty会浪费很多性能, 并且很少用户会通过索引操作 arr[666] = 777
       // vue3中的Polyfill直接就给数组做代理了
-      // 改写数组的方法, 勇敢用户调用了可以改写数组方法的api, 那么就去劫持这个方法
+      // 改写数组的方法, 用户调用了可以改写数组方法的api, 那么就去劫持这个方法
       // 变异方法 push pop shift unshift reverse sort splice
       // 修改数组的索引和长度无法更新视图
       data.__proto__ = arrayPrototype;
@@ -35,20 +41,45 @@ class Observer {
   }
 }
 
+// 深层次嵌套会递归, 递归多了性能差, 不粗案子属性监控不到, 存在的属性要重写方法
+function dependArray(value) {
+  for (let i = 0; i < value.length; i++) {
+    let current = value[i];
+    current.__ob__ && current.__ob__.dep.depend();
+    if (Array.isArray(current)) {
+      dependArray(current);
+    }
+  }
+}
+
 // 性能不好的原因, 所有的属性都被重新定义了一遍
 // 一上来需要将对象深度代理, 性能差
+// 闭包 属性劫持
 function defineReactive(data, key, value) {
-  observe(value); // 递归代理属性
+  const childOb = observe(value); // 递归代理属性, childOb就是当前的实例
   // 属性会全部被重写添加了get和set
+  let dep = new Dep(); // 每一个属性都有一个dep
   Object.defineProperty(data, key, {
+    // 取值的时候 会执行get
     get() {
+      if (Dep.target) {
+        dep.depend(); // 让这个属性的收集器记住当前的watcher
+        if (childOb) {
+          childOb.dep.depend(); // 让数组和对象本身也实现依赖收集
+          if (Array.isArray(value)) {
+            dependArray(value);
+          }
+        }
+      }
       return value;
     },
+    // 修改的时候 会执行set
     set(newValue) {
-      observe(newValue); // 赋值一个对象, 也可以实现响应式数据
-      if (newValue !== value) {
-        value = newValue;
-      }
+      // 修改的时候 会执行set
+      if (newValue === value) return;
+      observe(newValue);
+      value = newValue;
+      dep.notify(); // 通知更新
     },
   });
 }
@@ -58,9 +89,9 @@ export function observe(data) {
     // 如果不是对象类型, 那么不需要做任何处理
     return;
   }
-  if (data.__ob__) {
+  if (data.__ob__ instanceof Observer) {
     // 说明这个属性已经被代理过了
-    return;
+    return data.__ob__;
   }
   // 如果一个对象已经被观测了, 就不要再次被观测了
   // __ob__ 标识是否又被观测过

@@ -10,32 +10,6 @@ export function parse(html) {
   let root; // 树的操作，需要根据开始标签和结束标签产生一棵树
   // 如何构建树的父子关系
   let stack = [];
-  while (html) {
-    // 一个个字符来解析将结果跑出去
-    let textEnd = html.indexOf('<');
-    if (textEnd === 0) {
-      const startTagMatch = parseStartTag(); // 解析开始标签
-      if (startTagMatch) {
-        start(startTagMatch.tagName, startTagMatch.attrs);
-        continue;
-      }
-      let matches;
-      if ((matches = html.match(endTag))) {
-        // </div> 不是开始就会走到结束
-        end(matches[1]);
-        advance(matches[0].length);
-        continue;
-      }
-    }
-    let text;
-    if (textEnd >= 0) {
-      text = html.substring(0, textEnd);
-    }
-    if (text) {
-      advance(text.length);
-      chars(text);
-    }
-  }
   function createASTElement(tagName, attrs) {
     return {
       tag: tagName,
@@ -65,10 +39,13 @@ export function parse(html) {
     text = text.replace(/\s/g, '');
     if (text) {
       const parent = stack[stack.length - 1];
-      parent.children.push({
-        type: 3,
-        text,
-      });
+      if (parent) {
+        // Check if parent exists
+        parent.children.push({
+          type: 3,
+          text,
+        });
+      }
     }
   }
   function parseStartTag() {
@@ -100,6 +77,32 @@ export function parse(html) {
   }
   function advance(n) {
     html = html.substring(n); // 每次根据传入的长度截取html
+  }
+  while (html) {
+    // 一个个字符来解析将结果跑出去
+    let textEnd = html.indexOf('<');
+    if (textEnd === 0) {
+      const startTagMatch = parseStartTag(); // 解析开始标签
+      if (startTagMatch) {
+        start(startTagMatch.tagName, startTagMatch.attrs);
+        continue;
+      }
+      let matches;
+      if ((matches = html.match(endTag))) {
+        // </div> 不是开始就会走到结束
+        end(matches[1]);
+        advance(matches[0].length);
+        continue;
+      }
+    }
+    let text;
+    if (textEnd >= 0) {
+      text = html.substring(0, textEnd);
+    }
+    if (text) {
+      advance(text.length);
+      chars(text);
+    }
   }
   return root;
 }

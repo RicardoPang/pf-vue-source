@@ -167,32 +167,6 @@
     var root; // 树的操作，需要根据开始标签和结束标签产生一棵树
     // 如何构建树的父子关系
     var stack = [];
-    while (html) {
-      // 一个个字符来解析将结果跑出去
-      var textEnd = html.indexOf('<');
-      if (textEnd === 0) {
-        var startTagMatch = parseStartTag(); // 解析开始标签
-        if (startTagMatch) {
-          start(startTagMatch.tagName, startTagMatch.attrs);
-          continue;
-        }
-        var matches = void 0;
-        if (matches = html.match(endTag)) {
-          // </div> 不是开始就会走到结束
-          end(matches[1]);
-          advance(matches[0].length);
-          continue;
-        }
-      }
-      var text = void 0;
-      if (textEnd >= 0) {
-        text = html.substring(0, textEnd);
-      }
-      if (text) {
-        advance(text.length);
-        chars(text);
-      }
-    }
     function createASTElement(tagName, attrs) {
       return {
         tag: tagName,
@@ -222,10 +196,13 @@
       text = text.replace(/\s/g, '');
       if (text) {
         var parent = stack[stack.length - 1];
-        parent.children.push({
-          type: 3,
-          text: text
-        });
+        if (parent) {
+          // Check if parent exists
+          parent.children.push({
+            type: 3,
+            text: text
+          });
+        }
       }
     }
     function parseStartTag() {
@@ -255,6 +232,32 @@
     function advance(n) {
       html = html.substring(n); // 每次根据传入的长度截取html
     }
+    while (html) {
+      // 一个个字符来解析将结果跑出去
+      var textEnd = html.indexOf('<');
+      if (textEnd === 0) {
+        var startTagMatch = parseStartTag(); // 解析开始标签
+        if (startTagMatch) {
+          start(startTagMatch.tagName, startTagMatch.attrs);
+          continue;
+        }
+        var matches = void 0;
+        if (matches = html.match(endTag)) {
+          // </div> 不是开始就会走到结束
+          end(matches[1]);
+          advance(matches[0].length);
+          continue;
+        }
+      }
+      var text = void 0;
+      if (textEnd >= 0) {
+        text = html.substring(0, textEnd);
+      }
+      if (text) {
+        advance(text.length);
+        chars(text);
+      }
+    }
     return root;
   }
 
@@ -273,6 +276,165 @@
   // 将template转换成ast语法树, 再将语法树转换成一个字符串拼接在一起
   // ast用来描述语言本身，语法中没有的，不会被描述出来
   // vdom描述真实dom元素，可以自己添加属性
+
+  var id$1 = 0;
+  var Dep = /*#__PURE__*/function () {
+    function Dep() {
+      _classCallCheck(this, Dep);
+      this.id = id$1++; // 属性的dep要收集watcher
+      this.subs = []; // 这里存放着当前属性对应的watcher有哪些
+    }
+    return _createClass(Dep, [{
+      key: "depend",
+      value: function depend() {
+        // 这里我们不希望放重复的watcher，而且刚才只是一个单向的关系 dep -> watcher
+        // watcher 记录dep
+        // this.subs.push(Dep.target);
+
+        Dep.target.addDep(this); // 让watcher记住dep
+
+        // dep 和 watcher是一个多对多的关系 （一个属性可以在多个组件中使用 dep -> 多个watcher）
+        // 一个组件中由多个属性组成 （一个watcher 对应多个dep）
+      }
+    }, {
+      key: "addSub",
+      value: function addSub(watcher) {
+        this.subs.push(watcher);
+      }
+    }, {
+      key: "notify",
+      value: function notify() {
+        this.subs.forEach(function (watcher) {
+          return watcher.update();
+        }); // 告诉watcher要更新了
+      }
+    }]);
+  }();
+  Dep.target = null;
+
+  var id = 0;
+
+  // 1）当我们创建渲染watcher的时候我们会把当前的渲染watcher放到Dep.target上
+  // 2) 调用_render() 会取值 走到get上
+  // 每个属性有一个dep（属性就是被观察者）,watcher就是观察者（属性变化了会通知观察者来更新） -> 观察者模式
+  var Watcher = /*#__PURE__*/function () {
+    // 不同组件有不同的watcher 目前只有一个渲染根实例的
+    function Watcher(vm, fn, options) {
+      _classCallCheck(this, Watcher);
+      this.id = id++;
+      this.renderWatcher = options; // 是一个渲染watcher
+      this.getter = fn; // getter意味着调用这个函数可以发生取值操作
+      this.deps = []; // 后续我们实现计算属性，和一些清理工作需要用到
+      this.depsId = new Set();
+      this.get();
+    }
+    return _createClass(Watcher, [{
+      key: "addDep",
+      value: function addDep(dep) {
+        // 一个组件 对应着多个属性 重复的属性也不用记录
+        var id = dep.id;
+        if (!this.depsId.has(id)) {
+          this.deps.push(dep);
+          this.depsId.add(id);
+          dep.addSub(this); // watcher已经记住了dep了而且去重了，此时让dep也记住watcher
+        }
+      }
+    }, {
+      key: "get",
+      value: function get() {
+        // debugger;
+        Dep.target = this; // 静态属性就是只有一份
+        this.getter(); // 会去vm上取值  vm._update(vm._render) 取name 和age
+        Dep.target = null; // 渲染完毕后就清空
+      }
+    }, {
+      key: "update",
+      value: function update() {
+        console.log('update');
+        queueWatcher(this); // 把当前的watcher 暂存起来
+        // this.get(); // 重新渲染
+      }
+    }, {
+      key: "run",
+      value: function run() {
+        this.get(); // 渲染的时候用的是最新的vm来渲染的
+      }
+    }]);
+  }();
+  var queue = [];
+  var has = {};
+  var pending = false; // 防抖
+  function flushSchedulerQueue() {
+    var flushQueue = queue.slice(0);
+    queue = [];
+    has = {};
+    pending = false;
+    flushQueue.forEach(function (q) {
+      return q.run();
+    }); // 在刷新的过程中可能还有新的watcher，重新放到queue中
+  }
+  function queueWatcher(watcher) {
+    var id = watcher.id;
+    if (!has[id]) {
+      queue.push(watcher);
+      has[id] = true;
+      // 不管我们的update执行多少次 ，但是最终只执行一轮刷新操作
+      if (!pending) {
+        nextTick(flushSchedulerQueue);
+        pending = true;
+      }
+    }
+  }
+  var callbacks = [];
+  var waiting = false;
+  function flushCallbacks() {
+    var cbs = callbacks.slice(0);
+    waiting = false;
+    callbacks = [];
+    cbs.forEach(function (cb) {
+      return cb();
+    }); // 按照顺序依次执行
+  }
+  // nextTick 没有直接使用某个api 而是采用优雅降级的方式
+  // 内部先采用的是promise（ie不兼容）MutationObserver(h5的api) 可以考虑ie专享的 setImmediate setTimeout
+  var timerFunc;
+  if (Promise) {
+    timerFunc = function timerFunc() {
+      Promise.resolve().then(flushCallbacks);
+    };
+  } else if (MutationObserver) {
+    var observer = new MutationObserver(flushCallbacks); // 这里传入的回调是异步执行的
+    var textNode = document.createTextNode(1);
+    observer.observe(textNode, {
+      characterData: true
+    });
+    timerFunc = function timerFunc() {
+      textNode.textContent = 2;
+    };
+  } else if (setImmediate) {
+    timerFunc = function timerFunc() {
+      setImmediate(flushCallbacks);
+    };
+  } else {
+    timerFunc = function timerFunc() {
+      setTimeout(flushCallbacks);
+    };
+  }
+  // 异步任务分为两种,宏任务/微任务
+  // 宏任务 setTimeout setImmediate(IE下支持性能优于setTimeout)
+  // 微任务 promise.then mutationObserver
+  // Vue在更新的时候希望尽快的更新页面 Promise.then MutationObserver setImmediate setImmediate
+  // Vue3不再考虑兼容性问题了, 所以后续Vue3中直接使用Promise.then
+  function nextTick(cb) {
+    // 先内部还是先用户的？
+    callbacks.push(cb); // 维护nextTick中的cakllback方法
+    console.log(callbacks);
+    if (!waiting) {
+      timerFunc();
+      // Promise.resolve().then(flushCallbacks);
+      waiting = true;
+    }
+  }
 
   // 创建元素vnode 等于render函数里面的 h=>h(App)
   function createElement(vm, tag) {
@@ -373,20 +535,24 @@
       // 需要调用生成的render函数，获取到虚拟节点，生成真实节点
       vm._update(vm._render());
     };
-    updateComponent(); // 如果稍后数据变化，也调用这个函数重新执行
-
+    new Watcher(vm, updateComponent, function () {
+      console.log('页面传喔国内新渲染 updated');
+    }, true);
+    // updateComponent(); // 如果稍后数据变化，也调用这个函数重新执行
     // 观察者模式 + 依赖收集 + diff算法
   }
 
+  // 获取数组原型
   var oldArrayPrototype = Array.prototype;
   // arrayPrototype.__proto__ = Array.prototype
-
   var arrayPrototype = Object.create(oldArrayPrototype);
+  // 数组变异方法
   var methods = ['push', 'pop', 'shift', 'unshift', 'splice', 'reverse', 'sort'];
   methods.forEach(function (method) {
     // 用户调用push方法会先自己重写的方法, 之后调用数组原来的方法
     arrayPrototype[method] = function () {
       var _oldArrayPrototype$me;
+      // 需要对新增的数据再次进行劫持
       var inserted;
       var ob = this.__ob__;
       for (var _len = arguments.length, args = new Array(_len), _key = 0; _key < _len; _key++) {
@@ -406,25 +572,31 @@
         // 对新增的数据再次进行观测
         ob.observeArray(inserted);
       }
-      return (_oldArrayPrototype$me = oldArrayPrototype[method]).call.apply(_oldArrayPrototype$me, [this].concat(args));
+      var result = (_oldArrayPrototype$me = oldArrayPrototype[method]).call.apply(_oldArrayPrototype$me, [this].concat(args));
+      ob.dep.notify(); // 数据变化了, 通知对应的watcher实现更新逻辑
+      return result;
     };
   });
 
+  // 1.给每个对象和数组也增加dep属性
+  // 2.当页面取值的时候会执行get方法, 拿到刚才新增的dep属性, 让它记住这个watcher
+  // 3.稍后数据变化, 触发当前数组的dep中存放的watcher去更新
   var Observer = /*#__PURE__*/function () {
     function Observer(data) {
       _classCallCheck(this, Observer);
+      this.dep = new Dep(); // 给所有的对象都增加一个dep,后续会给对象增添新的属性也希望能实现更新
       // 如果有__ob__属性, 说明被观测过了
       Object.defineProperty(data, '__ob__', {
         value: this,
         enumerable: false,
-        // 不可枚举
+        // 不可枚举(循环的时候无法获取到)
         writable: true,
         configurable: true
       });
       if (Array.isArray(data)) {
-        // 如果是数组的话也是用defineProperty回浪费很多性能, 并且很少用户会通过索引操作 arr[666] = 777
+        // 如果是数组的话也是用defineProperty会浪费很多性能, 并且很少用户会通过索引操作 arr[666] = 777
         // vue3中的Polyfill直接就给数组做代理了
-        // 改写数组的方法, 勇敢用户调用了可以改写数组方法的api, 那么就去劫持这个方法
+        // 改写数组的方法, 用户调用了可以改写数组方法的api, 那么就去劫持这个方法
         // 变异方法 push pop shift unshift reverse sort splice
         // 修改数组的索引和长度无法更新视图
         data.__proto__ = arrayPrototype;
@@ -452,20 +624,45 @@
         });
       }
     }]);
-  }(); // 性能不好的原因, 所有的属性都被重新定义了一遍
+  }(); // 深层次嵌套会递归, 递归多了性能差, 不粗案子属性监控不到, 存在的属性要重写方法
+  function dependArray(value) {
+    for (var i = 0; i < value.length; i++) {
+      var current = value[i];
+      current.__ob__ && current.__ob__.dep.depend();
+      if (Array.isArray(current)) {
+        dependArray(current);
+      }
+    }
+  }
+
+  // 性能不好的原因, 所有的属性都被重新定义了一遍
   // 一上来需要将对象深度代理, 性能差
+  // 闭包 属性劫持
   function defineReactive(data, key, value) {
-    observe(value); // 递归代理属性
+    var childOb = observe(value); // 递归代理属性, childOb就是当前的实例
     // 属性会全部被重写添加了get和set
+    var dep = new Dep(); // 每一个属性都有一个dep
     Object.defineProperty(data, key, {
+      // 取值的时候 会执行get
       get: function get() {
+        if (Dep.target) {
+          dep.depend(); // 让这个属性的收集器记住当前的watcher
+          if (childOb) {
+            childOb.dep.depend(); // 让数组和对象本身也实现依赖收集
+            if (Array.isArray(value)) {
+              dependArray(value);
+            }
+          }
+        }
         return value;
       },
+      // 修改的时候 会执行set
       set: function set(newValue) {
-        observe(newValue); // 赋值一个对象, 也可以实现响应式数据
-        if (newValue !== value) {
-          value = newValue;
-        }
+        // 修改的时候 会执行set
+        if (newValue === value) return;
+        observe(newValue);
+        value = newValue;
+        dep.notify(); // 通知更新
       }
     });
   }
@@ -474,9 +671,9 @@
       // 如果不是对象类型, 那么不需要做任何处理
       return;
     }
-    if (data.__ob__) {
+    if (data.__ob__ instanceof Observer) {
       // 说明这个属性已经被代理过了
-      return;
+      return data.__ob__;
     }
     // 如果一个对象已经被观测了, 就不要再次被观测了
     // __ob__ 标识是否又被观测过
@@ -554,6 +751,7 @@
         options.render = render;
       }
       // 将当前组件实例挂载到真实的el节点上面
+      console.log(options.render.toString());
       return mountComponent(vm, el);
     };
   }
@@ -570,6 +768,7 @@
   }
   initMixin(Vue); // 后续再扩展都可以采用这种方式
   lifeCycleMixin(Vue);
+  Vue.prototype.$nextTick = nextTick;
 
   return Vue;
 

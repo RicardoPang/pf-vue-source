@@ -1,3 +1,4 @@
+import Watcher from './observer/watcher';
 import { createElement, createTextNode } from './vdom/index';
 import { patch } from './vdom/patch';
 
@@ -38,7 +39,14 @@ export function mountComponent(vm, el) {
     // 需要调用生成的render函数，获取到虚拟节点，生成真实节点
     vm._update(vm._render());
   };
-  updateComponent(); // 如果稍后数据变化，也调用这个函数重新执行
-
+  new Watcher(
+    vm,
+    updateComponent,
+    () => {
+      console.log('页面传喔国内新渲染 updated');
+    },
+    true
+  );
+  // updateComponent(); // 如果稍后数据变化，也调用这个函数重新执行
   // 观察者模式 + 依赖收集 + diff算法
 }

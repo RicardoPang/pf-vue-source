@@ -4,14 +4,13 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VueUpdate</title>
+    <title>vueMount</title>
   </head>
   <body>
     <div id="app" a="1" disabled style="background: lightblue; color: #333">
+      <a href="#">hello</a>
+      <b>world</b>
       <div>{{name}}</div>
-      <span>{{name}}</span>
-      <i>{{age}}</i>
-      <i>{{arr}}</i>
     </div>
     <script src="/dist/vue.js"></script>
     <script>
@@ -26,27 +25,24 @@
           return {
             name: 'ricardo',
             age: 22,
-            adress: '华南-广州',
-            arr: [[1, 2, 3]],
+            address: '华南-广州',
+            n: {
+              n: 1,
+            },
+            arr: ['北京', '上海', '深圳'],
           };
         },
+        // render(h) {
+        //   return h('div', { id: 'a' }, 'hello');
+        // },
+        // template: `<div id="a">hello</div>`,
       });
 
       setTimeout(() => {
-        // vm.address = '华南-深圳';
         vm.name = '黑白灰';
-        vm.name = 'pf';
-        vm.name = '还有谁';
-        vm.age = 33;
-        // vm.arr[0].push('123');
-        // vm._update(vm._render()); // 直接默认强制更新，有可能数据没有变化但是我强制的让页面发生一次渲染
-
-        vm.$nextTick(() => {
-          console.log(document.querySelector('div').innerHTML);
-        });
-      }, 1000);
-
-      // 渲染watcher默认情况下创造一个组件，就会生成一个渲染watcher
+        vm._update(vm._render());
+      }, 2000);
+      console.log(vm);
     </script>
   </body>
 </html>
