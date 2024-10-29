@@ -1,4 +1,5 @@
 function isSameVnode(n1, n2) {
+  // 如果两个人的标签和key 一样我认为是同一个节点 虚拟节点一样我就可以复用真实节点了
   return n1.tag === n2.tag && n1.key === n2.key;
 }
 

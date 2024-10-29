@@ -277,6 +277,52 @@
   // ast用来描述语言本身，语法中没有的，不会被描述出来
   // vdom描述真实dom元素，可以自己添加属性
 
+  function initGlobalAPI(Vue) {
+    Vue.options = {};
+    Vue.mixin = function (options) {
+      this.options = mergeOptions(this.options, options);
+      return this;
+    };
+  }
+  var strats = {};
+  var LIFECYCLE = ['beforeCreate', 'created'];
+  LIFECYCLE.forEach(function (hook) {
+    strats[hook] = function (p, c) {
+      if (c) {
+        // 如果儿子有 父亲有 让父亲和儿子拼在一起
+        if (p) {
+          return p.concat(c); // 最终八生命周期都合并在一起了
+        } else {
+          return [c]; // 儿子有父亲没有 则将儿子包装秤数组
+        }
+      } else {
+        return p; // 如果儿子没有则用父亲即可
+      }
+    };
+  });
+  function mergeOptions(parent, child) {
+    var options = {};
+    for (var key in parent) {
+      // 循环老的
+      mergeField(key);
+    }
+    for (var _key in child) {
+      if (!parent.hasOwnProperty(_key)) {
+        mergeField(_key);
+      }
+    }
+    function mergeField(key) {
+      // 策略模式 减少if-else
+      if (strats[key]) {
+        options[key] = strats[key](parent[key], child[key]);
+      } else {
+        // 如果不在测量中则以儿子为主
+        options[key] = child[key] || parent[key]; // 优先采用儿子 再采用父亲
+      }
+    }
+    return options;
+  }
+
   var id$1 = 0;
   var Dep = /*#__PURE__*/function () {
     function Dep() {
@@ -460,6 +506,7 @@
   }
 
   function isSameVnode(n1, n2) {
+    // 如果两个人的标签和key 一样我认为是同一个节点 虚拟节点一样我就可以复用真实节点了
     return n1.tag === n2.tag && n1.key === n2.key;
   }
   function createElm(vnode) {
@@ -662,6 +709,15 @@
 
   // 1.每次更新页面的话，dom结构不会变，调用render方法时，数据变化了会根据数据渲染成新的虚拟节点，用新的虚拟节点渲染dom
   // 2.Vue3采用了最长递增子序列 找到最长不需要移动的序列 从而减少了移动操作
+
+  function callHook(vm, hook) {
+    var handlers = vm.$options[hook];
+    if (handlers) {
+      for (var i = 0; i < handlers.length; i++) {
+        handlers[i].call(vm);
+      }
+    }
+  }
 
   // 创建对应的虚拟节点，进行渲染
   function lifeCycleMixin(Vue) {
@@ -895,11 +951,13 @@
     Vue.prototype._init = function (options) {
       var vm = this;
       // vue中会判断如果是$开头的属性不会被变成响应式数据
-      this.$options = options; // 所有后续的扩展方法都有一个$options选项可以获取用户的所有选项
+      this.$options = mergeOptions(vm.constructor.options, options); // 所有后续的扩展方法都有一个$options选项可以获取用户的所有选项
 
       // 对于实例的数据源 props data methods computed watch
       // prop data
+      callHook(vm, 'beforeCreate');
       initState(vm);
+      callHook(vm, 'created');
 
       // 状态初始化完毕后需要进行页面挂载
       if (vm.$options.el) {
@@ -938,6 +996,7 @@
   }
   initMixin(Vue); // 后续再扩展都可以采用这种方式
   lifeCycleMixin(Vue);
+  initGlobalAPI(Vue);
   Vue.prototype.$nextTick = nextTick;
 
   // ------------- 为了方便观察前后的虚拟节点-- 测试的-----------------

@@ -2,6 +2,15 @@ import Watcher from './observer/watcher';
 import { createElement, createTextNode } from './vdom/index';
 import { patch } from './vdom/patch';
 
+export function callHook(vm, hook) {
+  const handlers = vm.$options[hook];
+  if (handlers) {
+    for (let i = 0; i < handlers.length; i++) {
+      handlers[i].call(vm);
+    }
+  }
+}
+
 // 创建对应的虚拟节点，进行渲染
 export function lifeCycleMixin(Vue) {
   Vue.prototype._c = function () {
