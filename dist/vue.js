@@ -357,27 +357,53 @@
     }]);
   }();
   Dep.target = null;
+  var stack = [];
+  function pushTarget(watcher) {
+    stack.push(watcher);
+    Dep.target = watcher;
+  }
+  function popTarget() {
+    stack.pop();
+    Dep.target = stack[stack.length - 1];
+  }
 
   var id = 0;
 
   // 1）当我们创建渲染watcher的时候我们会把当前的渲染watcher放到Dep.target上
   // 2) 调用_render() 会取值 走到get上
-  // 每个属性有一个dep（属性就是被观察者）,watcher就是观察者（属性变化了会通知观察者来更新） -> 观察者模式
+  // 每个属性有一个dep（属性就是被观察者）,watcher就是观察者（属性变化了会通知观察者来更新）-> 观察者模式
   var Watcher = /*#__PURE__*/function () {
-    // 不同组件有不同的watcher 目前只有一个渲染根实例的
-    function Watcher(vm, fn, options) {
+    // 不同组件有不同的watcher 目前只有一个 渲染根实例的
+    function Watcher(vm, exprOrFn, options, cb) {
       _classCallCheck(this, Watcher);
       this.id = id++;
       this.renderWatcher = options; // 是一个渲染watcher
-      this.getter = fn; // getter意味着调用这个函数可以发生取值操作
       this.deps = []; // 后续我们实现计算属性，和一些清理工作需要用到
       this.depsId = new Set();
-      this.get();
+      this.cb = cb;
+      this.vm = vm;
+      this.lazy = options.lazy; // lazy属性是用来标识默认是否调用函数
+      this.dirty = this.lazy; // dirty属性是用来作缓存的
+      this.user = options.user; // 标识是否是用户自己的watcher
+
+      // 如果给的是一个字符串 需要去通过字符串取值
+      if (typeof exprOrFn === 'string') {
+        this.getter = function () {
+          var path = exprOrFn.split('.'); // [a.b]
+          return path.reduce(function (vm, current) {
+            vm = vm[current];
+            return vm;
+          }, vm);
+        };
+      } else {
+        this.getter = exprOrFn; // getter意味着调用这个函数可以发生取值操作
+      }
+      this.value = this.lazy ? undefined : this.get(); // 实现页面渲染
     }
     return _createClass(Watcher, [{
       key: "addDep",
       value: function addDep(dep) {
-        // 一个组件 对应着多个属性 重复的属性也不用记录
+        // 一个组件对应着多个属性 重复的属性也不用记录
         var id = dep.id;
         if (!this.depsId.has(id)) {
           this.deps.push(dep);
@@ -386,23 +412,49 @@
         }
       }
     }, {
+      key: "evaluate",
+      value: function evaluate() {
+        this.value = this.get(); // 获取到用户函数的返回值 并且还要标识为脏
+        this.dirty = false;
+      }
+    }, {
       key: "get",
       value: function get() {
-        // debugger;
-        Dep.target = this; // 静态属性就是只有一份
-        this.getter(); // 会去vm上取值  vm._update(vm._render) 取name 和age
-        Dep.target = null; // 渲染完毕后就清空
+        pushTarget(this); // 静态属性就是只有一份
+        var value = this.getter.call(this.vm); // 会去vm上取值 vm._update(vm._render) 取name 和age
+        popTarget(); // 渲染完毕后就清空
+        return value;
+      }
+    }, {
+      key: "depend",
+      value: function depend() {
+        // watcher的depend 就是让watcher中dep去depend
+        var i = this.deps.length;
+        while (i--) {
+          // 让dep记住渲染watcher
+          this.deps[i].depend(); // 让计算属性watcher 也收集渲染watcher
+        }
       }
     }, {
       key: "update",
       value: function update() {
-        queueWatcher(this); // 把当前的watcher 暂存起来
-        // this.get(); // 重新渲染
+        if (this.lazy) {
+          // 如果是计算属性 依赖的值变化了 就标识计算属性是脏值了
+          this.dirty = true;
+        } else {
+          queueWatcher(this); // 把当前的watcher 暂存起来
+          // this.get(); // 重新渲染
+        }
       }
     }, {
       key: "run",
       value: function run() {
-        this.get(); // 渲染的时候用的是最新的vm来渲染的
+        var oldValue = this.value;
+        var newValue = this.get(); // 渲染的时候用的是最新的vm来渲染的
+        if (this.user && this.cb) {
+          // 如果是用户watcher 则调用用户传入的callback
+          this.cb.call(this.vm, newValue, oldValue);
+        }
       }
     }]);
   }();
@@ -919,10 +971,16 @@
     // 获取传入的数据对象
     var options = vm.$options;
 
-    // 后续实现计算属性 watch props methods
+    // 后续实现计算属性 这里初始化的顺序依次是 prop>methods>data>computed>watch
     if (options.data) {
       // 初始化data
       initData(vm);
+    }
+    if (options.computed) {
+      initComputed(vm);
+    }
+    if (options.watch) {
+      initWatch(vm);
     }
   }
   function proxy(vm, source, key) {
@@ -945,6 +1003,84 @@
     }
     // 属性劫持, 采用defineProperty将所有的属性进行劫持
     observe(data);
+  }
+  function initWatch(vm) {
+    var watch = vm.$options.watch;
+    for (var key in watch) {
+      var handler = watch[key]; // 字符串 数组 函数
+      if (Array.isArray(handler)) {
+        for (var i = 0; i < handler.length; i++) {
+          createWatch(vm, key, handler[i]);
+        }
+      } else {
+        // 对当前属性进行创建watcher 存放的回调是handler 取数据是从vm上获取
+        createWatch(vm, key, handler);
+      }
+    }
+  }
+  function createWatch(vm, key, handler) {
+    // 判断如果handler是一个字符串 可以采用实例上的方法
+    var options;
+    if (_typeof(handler) === 'object' && handler !== null) {
+      options = handler;
+      handler = handler.handler;
+    }
+    if (typeof handler === 'string') {
+      handler = vm[handler];
+    }
+    return vm.$watch(key, handler, options);
+  }
+  function initComputed(vm) {
+    var computed = vm.$options.computed;
+    var watchers = vm._computedWatchers = {}; // 将计算属性watcher保存到vm上
+    for (var key in computed) {
+      var userDef = computed[key];
+      // 监控计算属性中get的变化
+      var fn = typeof userDef === 'function' ? userDef : userDef.get;
+      // 如果直接new Watcher 默认就会执行fn 将属性和watcher对应起来
+      watchers[key] = new Watcher(vm, fn, {
+        lazy: true
+      });
+      defineComputed(vm, key, userDef);
+    }
+  }
+  function defineComputed(target, key, userDef) {
+    var setter = userDef.set || function () {};
+    // 每次取值都会执行 可以通过实例拿到对应的属性
+    Object.defineProperty(target, key, {
+      get: createComputedGetter(key),
+      set: setter
+    });
+  }
+
+  // 计算属性根本不会收集依赖 只会让自己的依赖属性去收集依赖
+  function createComputedGetter(key) {
+    return function () {
+      var watcher = this._computedWatchers[key]; // 获取到对应属性的watcher
+      if (watcher.dirty) {
+        // 如果是脏的就去执行 用户传入的函数
+        watcher.evaluate(); // 求值后 dirty变为了false 下次就不求值了
+      }
+      // 在求值的过程中 stack = [渲染watcher, 计算属性watcher]
+      // 在evaluate执行完毕后 stack = [渲染watcher] => Dep.target = 渲染watcher
+      if (Dep.target) {
+        // 让计算属性watcher对应的两个dep记录watcher即可
+        // 计算属性出栈后 还要渲染watcher 应该让计算属性watcher里面的属性 也去收集上一层watcher
+        watcher.depend();
+      }
+      return watcher.value; // 最后返回的是watcher上的值
+    };
+  }
+  function stateMixin(Vue) {
+    Vue.prototype.$nextTick = nextTick;
+    Vue.prototype.$watch = function (exprOrFn, cb) {
+      var options = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
+      options.user = true; // 标记为用户watcher
+      var watcher = new Watcher(this, exprOrFn, options, cb);
+      if (options.immediate) {
+        cb.call(this, watcher.value);
+      }
+    };
   }
 
   function initMixin(Vue) {
@@ -996,52 +1132,8 @@
   }
   initMixin(Vue); // 后续再扩展都可以采用这种方式
   lifeCycleMixin(Vue);
+  stateMixin(Vue);
   initGlobalAPI(Vue);
-  Vue.prototype.$nextTick = nextTick;
-
-  // ------------- 为了方便观察前后的虚拟节点-- 测试的-----------------
-  var vm0 = new Vue({
-    data: {
-      name: 'pf',
-      age: 22
-    }
-  });
-  var render0 = compileToFunctions("<div class=\"a\" style=\"color: lightblue;\" b=\"1\"><span>{{name}}</span><span>{{age}}</span></div>");
-  var oldVnode = render0.call(vm0);
-  var ele = createElm(oldVnode);
-  document.body.appendChild(ele);
-  var vm = new Vue({
-    data: {
-      message: 'hello world'
-    }
-  });
-  var render = compileToFunctions("<div class=\"b\" style=\"color: red\" c=33><span>{{message}}</span></div>");
-  render.call(vm);
-  var render1 = compileToFunctions("<ul  a=\"1\" style=\"color:blue\">\n    <li key=\"A\">a</li>\n    <li key=\"B\">b</li>\n    <li key=\"C\">c</li>\n    <li key=\"D\">d</li>\n</ul>");
-  var vm1 = new Vue({
-    data: {
-      name: 'pf'
-    }
-  });
-  var prevVnode = render1.call(vm1);
-  var el = createElm(prevVnode);
-  document.body.appendChild(el);
-  var render2 = compileToFunctions("<ul  a=\"1\"  style=\"color:red;\">\n    <li key=\"C\">c</li>\n    <li key=\"A\">a</li>\n    <li key=\"D\">d</li>\n    <li key=\"E\">e</li>\n    <li key=\"Q\">q</li>\n</ul>");
-  var vm2 = new Vue({
-    data: {
-      name: 'zf'
-    }
-  });
-  var nextVnode = render2.call(vm2);
-
-  // 直接将新的节点替换掉了老的，不是直接替换 而是比较两个人的区别之后在替换 diff算法
-  // diff算法是一个平级比较的过程 父亲和父亲比对，儿子和儿子比对
-  // 主要比对标签名和key来判断是不是同一个元素, 如果标签和key都一样说明两个元素使同一个元素
-  setTimeout(function () {
-    // patch(oldVnode, newVnode);
-
-    patch(prevVnode, nextVnode);
-  }, 2000);
 
   return Vue;
 

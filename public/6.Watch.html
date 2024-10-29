@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Watch</title>
+  </head>
+  <body>
+    <div
+      id="app"
+      a="1"
+      disabled
+      style="background: lightblue; color: #333"
+    ></div>
+    <script src="/dist/vue.js"></script>
+    <script>
+      const vm = new Vue({
+        el: '#app',
+        data: {
+          name: 'pf',
+          a: { a: 1 },
+          arr: ['1', '2', '3'],
+          age: 22,
+          address: '广州',
+          score: 10000,
+        },
+        methods: {
+          handler(newVal, oldVal) {
+            console.log(newVal, oldVal);
+          },
+        },
+        watch: {
+          name(newVal, oldVal) {
+            console.log(newVal, oldVal);
+          },
+          a(newVal, oldVal) {
+            console.log(newVal, oldVal);
+          },
+          arr: [
+            (newVal, oldVal) => {
+              console.log(newVal, oldVal);
+            },
+          ],
+          age: [
+            'handler',
+            {
+              handler: (newVal, oldVal) => {
+                console.log(newVal, oldVal);
+              },
+              immediate: true,
+            },
+          ],
+          score(newVal) {
+            console.log('new', newVal);
+            this.score += 1;
+          },
+        },
+      });
+      vm.$watch('a.a', (newVal, oldVal) => {
+        console.log(newVal, oldVal);
+      });
+      setTimeout(() => {
+        vm.a.a = 22;
+        vm.name.a = 'ricardopang';
+        vm.a = { b: 2 };
+        vm.arr.push('123');
+        vm.age = 33;
+      }, 1000);
+      // vm.score = 100; // 跑死
+
+      // 用户编写的watch 等价于vm.$watch -> 李永乐watcher
+      // 每个属性对应一个watcher 属性变化了可以触发watcher更新
+      // 用户watcher是用户写的watcher 渲染watcher是渲染时使用的watcher
+    </script>
+  </body>
+</html>
