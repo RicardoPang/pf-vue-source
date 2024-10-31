@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Computed</title>
+  </head>
+  <body>
+    <div id="app" a="1" disabled style="background: lightblue; color: #333">
+      {{fullName}}
+    </div>
+    <script src="/dist/vue.js"></script>
+    <script>
+      const vm = new Vue({
+        el: '#app',
+        data: {
+          firstname: 'ricardo',
+          lastname: 'pang',
+        },
+        computed: {
+          // 计算属性就是defineProperty 但是内部封装了一个watcher
+          fullName() {
+            // 这个是defineProperty中的get方法
+            console.log('1');
+            return this.firstname + this.lastname;
+          },
+        },
+      });
+      setTimeout(() => {
+        vm.firstname = 100;
+        console.log(vm.fullName);
+      }, 1000);
+
+      // 计算属性是具备缓存的 如果依赖的属性没有变化 不会导致重新执行对应的函数
+      // 计算属性也是一个watcher 内部函数在调用的时候 会做取值操作 此时可以让对应的属性记住计算属性watcher
+
+      // 计算属性watcher在页面上使用的时候 如果改变了依赖的属性 那么页面需要重新渲染吗? 需要更新但是计算属性不会收集渲染watcher watcher中记录了它依赖了哪些属性 通过计算属性watcher 找到里面依赖的属性 让依赖的属性记住渲染watcher就可以了
+    </script>
+  </body>
+</html>

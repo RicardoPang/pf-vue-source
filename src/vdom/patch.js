@@ -3,10 +3,24 @@ function isSameVnode(n1, n2) {
   return n1.tag === n2.tag && n1.key === n2.key;
 }
 
+// 调用组件初始化方法
+function createComponent(vnode) {
+  let i = vnode.data;
+  if ((i = i.hook) && (i = i.init)) {
+    i(vnode); // 初始化组件 找到init方法
+  }
+  if (vnode.componentInstance) {
+    return true; // 说明是组件
+  }
+}
+
 export function createElm(vnode) {
   const { tag, data, children, text } = vnode;
   if (typeof tag === 'string') {
     // 元素
+    if (createComponent(vnode)) {
+      return vnode.componentInstance.$el;
+    }
     vnode.el = document.createElement(tag);
     patchProps(vnode.el, {}, data);
     children.forEach((child) => {
@@ -181,6 +195,11 @@ function updateChildren(el, oldChildren, newChildren) {
 }
 
 export function patch(oldVnode, vnode) {
+  if (!oldVnode) {
+    // 这就是组件的挂载
+    return createElm(vnode); // vm.$el 对应的就是组件渲染的结果了
+  }
+
   // oldVnode可能是后续做虚拟节点的时候，是两个虚拟节点的比较
   const isRealElement = oldVnode.nodeType; // 如果有说明是一个dom元素
   if (isRealElement) {
@@ -200,7 +219,7 @@ export function patch(oldVnode, vnode) {
     // 2.两个节点是同一个节点(判断节点的tag和节点的key) 比较两个节点的属性是否有差异(复用老节点 将差异的属性更新)
     // 3.节点比较完毕后就需要比较两个的儿子了
     patchVnode(oldVnode, vnode);
-    return vnode.el;
+    return vnode.el; // 最终返回新的el元素
   }
 }
 

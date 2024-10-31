@@ -8,6 +8,7 @@ export function initMixin(Vue) {
     const vm = this;
     // vue中会判断如果是$开头的属性不会被变成响应式数据
     this.$options = mergeOptions(vm.constructor.options, options); // 所有后续的扩展方法都有一个$options选项可以获取用户的所有选项
+    console.log(this.$options);
 
     // 对于实例的数据源 props data methods computed watch
     // prop data

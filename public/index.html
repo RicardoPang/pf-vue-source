@@ -4,38 +4,72 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Computed</title>
+    <title>Component</title>
   </head>
   <body>
     <div id="app" a="1" disabled style="background: lightblue; color: #333">
-      {{fullName}}
+      <outer-button></outer-button>
+      <my-button></my-button>
+      <my-button></my-button>
+      <pf-button></pf-button>
     </div>
     <script src="/dist/vue.js"></script>
     <script>
+      // 为什么要使用组件 优点是? 复用 方便维护 方便组合 性能可以组件级更新
+      // WebComponent 浏览器天生支持的组件化开发(兼容性差) 有优秀的webcomponent库
+      // React => Vue
+      // 全局组件就是可以在任何组件中使用 而不需要注册(全局组件先理解成是一个原型链的方法 组件会向上查找找到这个组件)
+
+      // Vue.component内部会调用一个api Vue.extend() 产生一个组件的子类
+      Vue.component('outer-button', {
+        // Vue.options.components = {}
+        name: 'xxx',
+        template: '<button>全局button</button>',
+      }); // new Sub().$mount('某个元素上') 每个组件在使用的时候都是通过类来new
+
+      Vue.component(
+        'pf-button',
+        Vue.extend({
+          template: '<button>PF按钮</button>',
+        })
+      );
+
+      // 函数式组件没有类 就是每次调用函数返回一个虚拟节点 所以函数式组件是没有watcher的
       const vm = new Vue({
         el: '#app',
-        data: {
-          firstname: 'ricardo',
-          lastname: 'pang',
-        },
-        computed: {
-          // 计算属性就是defineProperty 但是内部封装了一个watcher
-          fullName() {
-            // 这个是defineProperty中的get方法
-            console.log('1');
-            return this.firstname + this.lastname;
+        // 局部组件(定义后只能在当前组件中使用)
+        components: {
+          'my-button': {
+            beforeCreate() {
+              console.log('beforeCreate 1');
+            },
+            components: {
+              'my-ll': {
+                template: '<div>我很帅</div>',
+                beforeCreate() {
+                  console.log('beforeCreate 2');
+                },
+              },
+            },
+            template: '<button>我的按钮1111 <my-ll></my-ll></button>',
           },
         },
       });
-      setTimeout(() => {
-        vm.firstname = 100;
-        console.log(vm.fullName);
-      }, 1000);
 
-      // 计算属性是具备缓存的 如果依赖的属性没有变化 不会导致重新执行对应的函数
-      // 计算属性也是一个watcher 内部函数在调用的时候 会做取值操作 此时可以让对应的属性记住计算属性watcher
+      // Vue.options.components 当实例化某个组件的时候 可以把全局和自己的合并起来
+      // 全局组件和局部组件重名用谁的?
+      // 全局的会被定义在实例 vm.__proto__
+      // 局部的就直接定义在自己的身上
+      // 组件的三大特性: 属性 样式 插槽
+      // 组件的父子关系 new Vue(父亲) my-button(儿子) 类的继承
+      // Vue.component 注册一个全局组件? Vue.extend 返回一个子类的构造函数
 
-      // 计算属性watcher在页面上使用的时候 如果改变了依赖的属性 那么页面需要重新渲染吗? 需要更新但是计算属性不会收集渲染watcher watcher中记录了它依赖了哪些属性 通过计算属性watcher 找到里面依赖的属性 让依赖的属性记住渲染watcher就可以了
+      // 组件渲染流程总结
+      // Vue.component在组件中声明一个components属性 内部会把声明的对象用Vue.extend包裹
+      // 内部再new Vue的时候 会将全局的和自己的选项进行合并 但是合并的时候需要产生父子关系 在定义组件等会渲染的时候可以通过vm.$options.components拿到刚才声明的属性
+      // 1.需要产生虚拟节点 组件的虚拟节点上面 属性中包含着初始化的钩子函数 int 同时组件的虚拟节点上拥有一个componentOptions属性 Ctor
+      // 2.渲染真实节点 就是new Ctor创建子类的实例 去走Vue的初始化流程 初始化完毕后 就会返回一个实例 实例上包含着真实的dom元素 我们将元素插入到页面上
+      // 3.完成渲染逻辑
     </script>
   </body>
 </html>

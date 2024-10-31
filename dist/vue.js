@@ -279,9 +279,33 @@
 
   function initGlobalAPI(Vue) {
     Vue.options = {};
+    Vue.options._base = Vue;
     Vue.mixin = function (options) {
       this.options = mergeOptions(this.options, options);
       return this;
+    };
+
+    // 组件核心方法 可以手动创造组件进行挂载
+    Vue.extend = function (options) {
+      // 就是实现根据用户的参数 返回一个构造而已
+      function Sub() {
+        var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+        // 最终使用一个组件 就是new一个实例
+        this._init(options); // 就是默认对子类进行初始化操作
+      }
+      // 子类继承父类原型方法
+      Sub.prototype = Object.create(Vue.prototype); // Sub.prototype.__proto__ === Vue.prototype
+      Sub.prototype.constructor = Sub;
+
+      // 希望将用户传递的参数 和全局的Vue.options来合并
+      Sub.options = mergeOptions(Vue.options, options); // 保存用户传递的选项
+      return Sub;
+    };
+    Vue.options.components = {}; // 放的是全局组件 全局的指令 Vue.otpions.directives
+    Vue.component = function (id, definition) {
+      // 如果definition已经是一个函数了 说明用户自己调用了Vue.extend
+      definition = typeof definition === 'function' ? definition : Vue.extend(definition);
+      Vue.options.components[id] = definition;
     };
   }
   var strats = {};
@@ -300,6 +324,15 @@
       }
     };
   });
+  strats.components = function (parentVal, childVal) {
+    var res = Object.create(parentVal);
+    if (childVal) {
+      for (var key in childVal) {
+        res[key] = childVal[key]; // 返回的是构造的对象 可以拿到父亲原型上的属性 并且将儿子的拷贝到自己身上
+      }
+    }
+    return res;
+  };
   function mergeOptions(parent, child) {
     var options = {};
     for (var key in parent) {
@@ -322,6 +355,9 @@
     }
     return options;
   }
+
+  // Vue.extend 给我一个对象 我会根据这个对象生成一个类 后续使用组件的时候其实就是new这个类
+  // 这个子类会继承父类Vue
 
   var id$1 = 0;
   var Dep = /*#__PURE__*/function () {
@@ -485,6 +521,7 @@
   var callbacks = [];
   var waiting = false;
   function flushCallbacks() {
+    // 默认第一次会将两次的nextTick 都维护到callbacks中 [用户的, 页面渲染的]
     var cbs = callbacks.slice(0);
     waiting = false;
     callbacks = [];
@@ -532,27 +569,69 @@
     }
   }
 
+  // 1.先声明组件的映射关系 Vue.component (components: xxx)
+  // 2.需要根据组件的名字生成一个组件的虚拟节点
+  // 3.需要去创造组件的实例
+  // 4.替换原来渲染内容
+
+  var isReservedTag = function isReservedTag(tag) {
+    return ['a', 'div', 'p', 'button', 'ul', 'li', 'span'].includes(tag);
+  };
+
   // 创建元素vnode 等于render函数里面的 h=>h(App)
   function createElement(vm, tag) {
     var data = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
     for (var _len = arguments.length, children = new Array(_len > 3 ? _len - 3 : 0), _key = 3; _key < _len; _key++) {
       children[_key - 3] = arguments[_key];
     }
-    return vnode(vm, tag, data, children, data.key, null);
+    // 需要判断tag是元素还是组件
+    if (isReservedTag(tag)) {
+      return vnode(vm, tag, data, children, data.key, undefined);
+    } else {
+      // 创造组件的虚拟节点 组件需要找到组件的模版去进行渲染
+      var Ctor = vm.$options.components[tag]; // 罪案构造函数
+      // Ctor就是组件的定义 可能是一个Sub类 还有可能更是组件的obj选项
+      return createComponentVnode(vm, tag, data, children, data.key, Ctor);
+    }
   }
+  var init = function init(vnode) {
+    // 组件的虚拟节点上有组件的实例 new Sub()._init()
+    var child = vnode.componentInstance = new vnode.componentOptions.Ctor({}); // 组件的children {} 放插槽属性
+    child.$mount();
+  };
+  function createComponentVnode(vm, tag, key, data, children, Ctor) {
+    if (_typeof(Ctor) === 'object' && Ctor !== null) {
+      Ctor = vm.$options._base.extend(Ctor); // 组件内部声明的components属性也会包装成类
+    }
+    data.hook = {
+      // 稍后创造真实节点的时候 如果是组件则调用此init方法
+      init: init
+    };
+    return vnode(vm, tag, data, undefined, key, undefined, {
+      Ctor: Ctor,
+      children: children
+    });
+  }
+
+  /**
+   * 先将模板变成了ast语法树 => 生成了render函数 => 创造虚拟节点(虚拟节点可能是元素也可能是组件),
+   * 如果是组件就创造组件的虚拟节点(data.hook componentOptions里面放着组件的Ctor) =>
+   * 创造真实节点 createElm => 组件会调用init(创造组件的实例并挂载)
+   */
 
   // 创建文本vnode
   function createTextNode(vm, text) {
     return vnode(vm, undefined, undefined, undefined, undefined, text);
   }
-  function vnode(vm, tag, data, children, key, text) {
+  function vnode(vm, tag, data, children, key, text, componentOptions) {
     return {
       vm: vm,
       tag: tag,
       data: data,
       children: children,
       key: key,
-      text: text
+      text: text,
+      componentOptions: componentOptions // 组件的构造函数
       // ...
     };
   }
@@ -561,6 +640,17 @@
     // 如果两个人的标签和key 一样我认为是同一个节点 虚拟节点一样我就可以复用真实节点了
     return n1.tag === n2.tag && n1.key === n2.key;
   }
+
+  // 调用组件初始化方法
+  function createComponent(vnode) {
+    var i = vnode.data;
+    if ((i = i.hook) && (i = i.init)) {
+      i(vnode); // 初始化组件 找到init方法
+    }
+    if (vnode.componentInstance) {
+      return true; // 说明是组件
+    }
+  }
   function createElm(vnode) {
     var tag = vnode.tag,
       data = vnode.data,
@@ -568,6 +658,9 @@
       text = vnode.text;
     if (typeof tag === 'string') {
       // 元素
+      if (createComponent(vnode)) {
+        return vnode.componentInstance.$el;
+      }
       vnode.el = document.createElement(tag);
       patchProps(vnode.el, {}, data);
       children.forEach(function (child) {
@@ -736,6 +829,11 @@
     }
   }
   function patch(oldVnode, vnode) {
+    if (!oldVnode) {
+      // 这就是组件的挂载
+      return createElm(vnode); // vm.$el 对应的就是组件渲染的结果了
+    }
+
     // oldVnode可能是后续做虚拟节点的时候，是两个虚拟节点的比较
     var isRealElement = oldVnode.nodeType; // 如果有说明是一个dom元素
     if (isRealElement) {
@@ -755,7 +853,7 @@
       // 2.两个节点是同一个节点(判断节点的tag和节点的key) 比较两个节点的属性是否有差异(复用老节点 将差异的属性更新)
       // 3.节点比较完毕后就需要比较两个的儿子了
       patchVnode(oldVnode, vnode);
-      return vnode.el;
+      return vnode.el; // 最终返回新的el元素
     }
   }
 
@@ -1088,6 +1186,7 @@
       var vm = this;
       // vue中会判断如果是$开头的属性不会被变成响应式数据
       this.$options = mergeOptions(vm.constructor.options, options); // 所有后续的扩展方法都有一个$options选项可以获取用户的所有选项
+      console.log(this.$options);
 
       // 对于实例的数据源 props data methods computed watch
       // prop data

@@ -1,8 +1,32 @@
 export default function initGlobalAPI(Vue) {
   Vue.options = {};
+  Vue.options._base = Vue;
   Vue.mixin = function (options) {
     this.options = mergeOptions(this.options, options);
     return this;
+  };
+
+  // 组件核心方法 可以手动创造组件进行挂载
+  Vue.extend = function (options) {
+    // 就是实现根据用户的参数 返回一个构造而已
+    function Sub(options = {}) {
+      // 最终使用一个组件 就是new一个实例
+      this._init(options); // 就是默认对子类进行初始化操作
+    }
+    // 子类继承父类原型方法
+    Sub.prototype = Object.create(Vue.prototype); // Sub.prototype.__proto__ === Vue.prototype
+    Sub.prototype.constructor = Sub;
+
+    // 希望将用户传递的参数 和全局的Vue.options来合并
+    Sub.options = mergeOptions(Vue.options, options); // 保存用户传递的选项
+    return Sub;
+  };
+  Vue.options.components = {}; // 放的是全局组件 全局的指令 Vue.otpions.directives
+  Vue.component = function (id, definition) {
+    // 如果definition已经是一个函数了 说明用户自己调用了Vue.extend
+    definition =
+      typeof definition === 'function' ? definition : Vue.extend(definition);
+    Vue.options.components[id] = definition;
   };
 }
 
@@ -23,6 +47,16 @@ LIFECYCLE.forEach((hook) => {
     }
   };
 });
+
+strats.components = function (parentVal, childVal) {
+  const res = Object.create(parentVal);
+  if (childVal) {
+    for (let key in childVal) {
+      res[key] = childVal[key]; // 返回的是构造的对象 可以拿到父亲原型上的属性 并且将儿子的拷贝到自己身上
+    }
+  }
+  return res;
+};
 
 export function mergeOptions(parent, child) {
   const options = {};
@@ -46,3 +80,6 @@ export function mergeOptions(parent, child) {
   }
   return options;
 }
+
+// Vue.extend 给我一个对象 我会根据这个对象生成一个类 后续使用组件的时候其实就是new这个类
+// 这个子类会继承父类Vue

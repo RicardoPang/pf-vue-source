@@ -105,6 +105,7 @@ function queueWatcher(watcher) {
 let callbacks = [];
 let waiting = false;
 function flushCallbacks() {
+  // 默认第一次会将两次的nextTick 都维护到callbacks中 [用户的, 页面渲染的]
   let cbs = callbacks.slice(0);
   waiting = false;
   callbacks = [];
